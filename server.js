@@ -1,5 +1,6 @@
 const express = require('express');
 const cors = require('cors');
+const path = require('path');
 const { Sequelize, DataTypes } = require('sequelize');
 require('dotenv').config();
 
@@ -13,6 +14,9 @@ const sequelize = new Sequelize(process.env.DATABASE_URL, {
 // Middleware
 app.use(cors());
 app.use(express.json());
+
+// Serve static files dari public folder
+app.use(express.static(path.join(__dirname, '../public')));
 
 // Models
 const Recipe = sequelize.define('Recipe', {
@@ -93,7 +97,6 @@ app.post('/api/calculate-bumbu', async (req, res) => {
             return res.status(400).json({ error: 'recipe_id dan berat_utama required' });
         }
 
-        // Get bumbu standard
         const bumbu = await sequelize.query(
             'SELECT bumbu_name, persentase, category, is_required FROM bumbu_standard WHERE recipe_id = $1',
             { bind: [recipe_id], type: sequelize.QueryTypes.SELECT }
@@ -103,7 +106,6 @@ app.post('/api/calculate-bumbu', async (req, res) => {
             return res.status(404).json({ error: 'Bumbu standard tidak ditemukan' });
         }
 
-        // Calculate
         const hasil = bumbu.map(b => ({
             nama: b.bumbu_name,
             persentase: b.persentase,
@@ -114,7 +116,6 @@ app.post('/api/calculate-bumbu', async (req, res) => {
 
         const total_bumbu = Math.round(hasil.reduce((sum, b) => sum + b.berat, 0) * 100) / 100;
 
-        // Save to history
         await sequelize.query(
             'INSERT INTO calculation_history (recipe_id, berat_utama, total_bumbu, hasil_perhitungan) VALUES ($1, $2, $3, $4)',
             {
@@ -148,6 +149,11 @@ app.get('/api/calculation-history/:recipe_id', async (req, res) => {
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
+});
+
+// FALLBACK: Serve index.html untuk semua route yang tidak match API
+app.get('*', (req, res) => {
+    res.sendFile(path.join(__dirname, '../public/index.html'));
 });
 
 // Start server
