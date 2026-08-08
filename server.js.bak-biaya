@@ -1,0 +1,211 @@
+const express = require('express');
+const cors = require('cors');
+require('dotenv').config();
+const { sequelize, Recipe, RecipeIngredient } = require('./models/index');
+
+const app = express();
+const PORT = process.env.PORT || 5000;
+
+app.use(cors({ origin: '*' }));
+app.use(express.json());
+
+// Root
+app.get('/', async (req, res) => {
+  try {
+    await sequelize.authenticate();
+    res.send('🚀 MBG ERP Backend is ON! (DB connected)');
+  } catch (e) {
+    res.send('❌ DB error: ' + e.message);
+  }
+});
+
+// GET semua resep (untuk dropdown)
+app.get('/api/recipes', async (req, res) => {
+  try {
+    const recipes = await Recipe.findAll({ attributes: ['id', 'name'] });
+    res.json(recipes);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST hitung resep dengan skala berat per porsi
+app.post('/api/recipes/calculate', async (req, res) => {
+  const { recipeId, portions, weightPerPortion } = req.body;
+
+  try {
+    const recipe = await Recipe.findByPk(recipeId, {
+      include: [{ model: RecipeIngredient }]
+    });
+    if (!recipe) return res.status(404).json({ error: 'Resep tidak ditemukan' });
+
+    // Berat dasar resep (1 porsi standar dari database)
+    const baseTotalWeight = recipe.RecipeIngredients.reduce((sum, ing) => sum + ing.amount, 0);
+
+    // Tentukan berat per porsi target (jika tidak dikirim, pakai base)
+    let targetWeightPerPortion = weightPerPortion || baseTotalWeight;
+
+    // Jumlah porsi (default 1)
+    const targetPortions = portions || 1;
+
+    // Total berat target
+    const totalTargetWeight = targetWeightPerPortion * targetPortions;
+
+    // Faktor skala
+    const scale = totalTargetWeight / baseTotalWeight;
+
+    // Terapkan skala
+    const ingredients = recipe.RecipeIngredients.map(ing => ({
+      name: ing.name,
+      unit: ing.unit,
+      amount: ing.amount,
+      total: Math.round(ing.amount * scale * 100) / 100
+    }));
+
+    res.json({
+      recipeName: recipe.name,
+      portions: targetPortions,
+      baseWeight: Math.round(baseTotalWeight * 100) / 100,
+      weightPerPortion: Math.round(targetWeightPerPortion * 100) / 100,
+      totalWeight: Math.round(totalTargetWeight * 100) / 100,
+      ingredients
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ==================== ADMIN CRUD ====================
+
+app.get('/api/admin/recipes', async (req, res) => {
+  try {
+    const recipes = await Recipe.findAll({
+      include: [{ model: RecipeIngredient }]
+    });
+    res.json(recipes);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/admin/recipes', async (req, res) => {
+  const { name, description, ingredients } = req.body;
+  if (!name || !ingredients || !ingredients.length) {
+    return res.status(400).json({ error: 'Nama dan bahan wajib diisi' });
+  }
+  try {
+    const recipe = await Recipe.create({ name, description });
+    for (const ing of ingredients) {
+      await RecipeIngredient.create({
+        recipeId: recipe.id,
+        name: ing.name,
+        unit: ing.unit,
+        amount: ing.amount
+      });
+    }
+    res.status(201).json({ message: 'Resep berhasil ditambahkan', recipe });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/admin/recipes/:id', async (req, res) => {
+  const { id } = req.params;
+  const { name, description, ingredients } = req.body;
+  try {
+    const recipe = await Recipe.findByPk(id);
+    if (!recipe) return res.status(404).json({ error: 'Resep tidak ditemukan' });
+    await recipe.update({ name, description });
+    await RecipeIngredient.destroy({ where: { recipeId: id } });
+    for (const ing of ingredients) {
+      await RecipeIngredient.create({
+        recipeId: id,
+        name: ing.name,
+        unit: ing.unit,
+        amount: ing.amount
+      });
+    }
+    res.json({ message: 'Resep berhasil diupdate' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/admin/recipes/:id', async (req, res) => {
+  const { id } = req.params;
+  try {
+    const recipe = await Recipe.findByPk(id);
+    if (!recipe) return res.status(404).json({ error: 'Resep tidak ditemukan' });
+    await RecipeIngredient.destroy({ where: { recipeId: id } });
+    await recipe.destroy();
+    res.json({ message: 'Resep berhasil dihapus' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+// ==================== IMPORT RECIPE ====================
+
+const fs = require('fs');
+const path = require('path');
+
+// GET daftar resep dari file JSON (untuk pencarian)
+app.get('/api/import/search', (req, res) => {
+  const { q } = req.query;
+  if (!q) return res.status(400).json({ error: 'Parameter pencarian wajib diisi' });
+
+  try {
+    const filePath = path.join(__dirname, 'resep.json');
+    const raw = fs.readFileSync(filePath, 'utf8');
+    const allRecipes = JSON.parse(raw);
+
+    // Filter berdasarkan judul (case-insensitive)
+    const results = allRecipes.filter(r =>
+      r.title.toLowerCase().includes(q.toLowerCase())
+    ).slice(0, 20); // maksimal 20 hasil
+
+    res.json(results);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST import satu resep ke database
+app.post('/api/import/recipe', async (req, res) => {
+  const { title, ingredients, steps } = req.body;
+  if (!title || !ingredients || !ingredients.length) {
+    return res.status(400).json({ error: 'Judul dan bahan wajib diisi' });
+  }
+
+  try {
+    // Buat resep baru
+    const recipe = await Recipe.create({
+      name: title,
+      description: steps ? steps.join('\n') : ''
+    });
+
+    // Proses bahan
+    for (const ing of ingredients) {
+      let amount = parseFloat(ing.amount) || 0;
+      let unit = ing.unit || 'gram';
+
+      // Konversi singkatan
+      if (unit === 'sdm') { unit = 'ml'; amount = amount * 15; }
+      if (unit === 'sdt') { unit = 'ml'; amount = amount * 5; }
+      if (unit === 'bh' || unit === 'buah') { unit = 'butir'; }
+      if (unit === 'siung') { unit = 'gram'; amount = amount * 5; }
+      if (unit === 'secukupnya') { unit = 'gram'; amount = 5; }
+
+      await RecipeIngredient.create({
+        recipeId: recipe.id,
+        name: ing.name,
+        unit: unit,
+        amount: amount || 1
+      });
+    }
+
+    res.status(201).json({ message: 'Resep berhasil diimport', recipe });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+app.listen(PORT, () => console.log(`✅ Server on port ${PORT}`));

@@ -3,11 +3,10 @@ const { Sequelize, DataTypes } = require('sequelize');
 const sequelize = new Sequelize(process.env.DATABASE_URL, {
   dialect: 'postgres',
   dialectOptions: {
-    ssl: { require: true, rejectUnauthorized: false }
+    ssl: false   // Matikan SSL karena koneksi lokal
   },
   logging: false
 });
-
 const Recipe = sequelize.define('Recipe', {
   id: { type: DataTypes.INTEGER, autoIncrement: true, primaryKey: true },
   name: { type: DataTypes.STRING, allowNull: false },

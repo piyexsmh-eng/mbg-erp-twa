@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Impor Resep</title>
+    <style>
+        body { font-family: Arial; padding: 20px; background: #f0f0f0; max-width: 900px; margin: auto; }
+        .card { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        input, button { padding: 10px; margin: 5px 0; border-radius: 6px; border: 1px solid #ccc; font-size: 14px; }
+        input { width: 70%; }
+        button { background: #22c55e; color: white; border: none; cursor: pointer; font-weight: bold; padding: 10px 20px; }
+        button:hover { background: #16a34a; }
+        .btn-warning { background: #f59e0b; }
+        .btn-danger { background: #ef4444; }
+        .btn-secondary { background: #3b82f6; }
+        .recipe-item { border: 1px solid #ddd; border-radius: 8px; padding: 15px; margin-bottom: 10px; background: #fafafa; }
+        .recipe-item h3 { margin: 0 0 8px 0; }
+        .recipe-item ul { margin: 5px 0; padding-left: 20px; }
+        .recipe-item button { margin-top: 8px; }
+        .flex-row { display: flex; gap: 10px; flex-wrap: wrap; }
+        .flex-row button { flex: 1; }
+        .link-nav { margin-bottom: 16px; }
+        .link-nav a { color: #3b82f6; text-decoration: none; margin-right: 16px; }
+        .link-nav a:hover { text-decoration: underline; }
+    </style>
+</head>
+<body>
+    <div class="link-nav">
+        <a href="/">🏠 Kalkulator</a>
+        <a href="/admin/">⚙️ Admin</a>
+        <a href="/inventory.html">📦 Stok</a>
+    </div>
+    <h1>📥 Impor Resep Otomatis</h1>
+
+    <div class="card">
+        <h2>🔍 Cari Resep dari Dataset</h2>
+        <div style="display:flex; gap:8px; flex-wrap:wrap;">
+            <input type="text" id="searchInput" placeholder="Cari resep (contoh: ayam kecap, rendang)" style="flex:1; min-width:200px;">
+            <button id="searchBtn" style="flex:0 0 auto;">🔍 Cari</button>
+        </div>
+        <div id="results" style="margin-top:16px;">
+            <p style="color:#6b7280;">Masukkan kata kunci lalu klik Cari.</p>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>📋 Resep yang Sudah Diimport</h2>
+        <div id="importedList">⏳ Memuat...</div>
+        <button id="refreshBtn" class="btn-secondary" style="margin-top:8px;">🔄 Refresh Daftar</button>
+    </div>
+
+    <script>
+        const IMPORT_API = '/api/import';
+        const RECIPE_API = '/api/admin/recipes';
+
+        // ========== PENCARIAN ==========
+        document.getElementById('searchBtn').onclick = async () => {
+            const query = document.getElementById('searchInput').value.trim();
+            if (!query) { alert('Masukkan kata kunci'); return; }
+            const resultsDiv = document.getElementById('results');
+            resultsDiv.innerHTML = '⏳ Mencari...';
+            try {
+                const res = await fetch(`${IMPORT_API}/search?q=${encodeURIComponent(query)}`);
+                if (!res.ok) throw new Error('Gagal fetch data');
+                const data = await res.json();
+                if (!data || !data.length) {
+                    resultsDiv.innerHTML = '❌ Tidak ada resep yang cocok.';
+                    return;
+                }
+                let html = '';
+                data.forEach(recipe => {
+                    // Format bahan (bisa array atau object)
+                    let ingredientsList = [];
+                    if (Array.isArray(recipe.ingredients)) {
+                        ingredientsList = recipe.ingredients;
+                    } else if (recipe.ingredients && typeof recipe.ingredients === 'object') {
+                        ingredientsList = Object.entries(recipe.ingredients).map(([name, amount]) => ({ name, amount: amount || '' }));
+                    }
+
+                    html += `
+                        <div class="recipe-item">
+                            <h3>${recipe.title}</h3>
+                            <p><strong>Bahan:</strong></p>
+                            <ul>${ingredientsList.map(i => `<li>${i.name} ${i.amount || ''}</li>`).join('')}</ul>
+                            <p><strong>Langkah:</strong> ${recipe.steps ? recipe.steps.join(' → ') : 'Tidak ada'}</p>
+                            <button onclick="importRecipe(${JSON.stringify(recipe)})" class="btn-warning">📥 Import Resep</button>
+                        </div>
+                    `;
+                });
+                resultsDiv.innerHTML = html;
+            } catch (e) {
+                resultsDiv.innerHTML = '❌ Gagal mencari: ' + e.message;
+            }
+        };
+
+        // ========== IMPORT ==========
+        async function importRecipe(recipe) {
+            // Format bahan
+            let ingredientsList = [];
+            if (Array.isArray(recipe.ingredients)) {
+                ingredientsList = recipe.ingredients;
+            } else if (recipe.ingredients && typeof recipe.ingredients === 'object') {
+                ingredientsList = Object.entries(recipe.ingredients).map(([name, amount]) => ({ name, amount: amount || '' }));
+            }
+
+            if (!confirm(`Import resep "${recipe.title}"?`)) return;
+
+            try {
+                const res = await fetch(`${IMPORT_API}/recipe`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        title: recipe.title,
+                        ingredients: ingredientsList,
+                        steps: recipe.steps || []
+                    })
+                });
+                const data = await res.json();
+                if (res.ok) {
+                    alert('✅ Resep berhasil diimport!');
+                    loadImported();
+                } else {
+                    alert('❌ Gagal: ' + (data.error || 'Terjadi kesalahan'));
+                }
+            } catch (e) {
+                alert('❌ Error: ' + e.message);
+            }
+        }
+
+        // ========== LOAD RESEP TERIMPORT ==========
+        async function loadImported() {
+            const listDiv = document.getElementById('importedList');
+            try {
+                const res = await fetch(RECIPE_API);
+                const data = await res.json();
+                if (!data || !data.length) {
+                    listDiv.innerHTML = 'Belum ada resep yang diimport.';
+                    return;
+                }
+                let html = '<ul style="list-style-type:disc; padding-left:20px;">';
+                data.forEach(r => {
+                    html += `<li><strong>${r.name}</strong> (${r.RecipeIngredients ? r.RecipeIngredients.length : 0} bahan)</li>`;
+                });
+                html += '</ul>';
+                listDiv.innerHTML = html;
+            } catch (e) {
+                listDiv.innerHTML = '❌ Gagal memuat daftar resep: ' + e.message;
+            }
+        }
+
+        document.getElementById('refreshBtn').onclick = loadImported;
+
+        // Load daftar saat halaman dibuka
+        loadImported();
+    </script>
+</body>
+</html>

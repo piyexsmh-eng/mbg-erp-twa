@@ -1,0 +1,14 @@
+[0;1;31m●[0m postgresql-14.service - PostgreSQL 14 database server
+   Loaded: loaded (/usr/lib/systemd/system/postgresql-14.service; enabled; vendor preset: disabled)
+   Active: [0;1;31mfailed[0m (Result: exit-code) since Mon 2026-08-03 18:28:31 WIB; 36s ago
+     Docs: https://www.postgresql.org/docs/14/static/
+
+Aug 03 18:28:30 server.otepe systemd[1]: [0;1;39m[0;1;31m[0;1;39mpostgresql-14.service: Control process exited, code=exited status=1[0m
+Aug 03 18:28:30 server.otepe systemd[1]: [0;1;39m[0;1;31m[0;1;39mpostgresql-14.service: Failed with result 'exit-code'.[0m
+Aug 03 18:28:30 server.otepe systemd[1]: [0;1;31m[0;1;39m[0;1;31mFailed to start PostgreSQL 14 database server.[0m
+Aug 03 18:28:31 server.otepe systemd[1]: postgresql-14.service: Service RestartSec=100ms expired, scheduling restart.
+Aug 03 18:28:31 server.otepe systemd[1]: postgresql-14.service: Scheduled restart job, restart counter is at 5.
+Aug 03 18:28:31 server.otepe systemd[1]: Stopped PostgreSQL 14 database server.
+Aug 03 18:28:31 server.otepe systemd[1]: [0;1;39m[0;1;31m[0;1;39mpostgresql-14.service: Start request repeated too quickly.[0m
+Aug 03 18:28:31 server.otepe systemd[1]: [0;1;39m[0;1;31m[0;1;39mpostgresql-14.service: Failed with result 'exit-code'.[0m
+Aug 03 18:28:31 server.otepe systemd[1]: [0;1;31m[0;1;39m[0;1;31mFailed to start PostgreSQL 14 database server.[0m
